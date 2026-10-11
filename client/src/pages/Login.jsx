@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
 export default function Login() {
   const { login } = useAuth();
@@ -37,6 +38,7 @@ export default function Login() {
           {busy ? "Logging in..." : "Login"}
         </button>
       </form>
+      <GoogleSignInButton onError={setError} />
       <p className="text-sm text-center mt-4 text-slate-500">
         New here? <Link to="/register" className="text-indigo-600 font-semibold">Create account</Link>
       </p>

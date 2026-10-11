@@ -1,14 +1,34 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api";
 
 export default function Analyze() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [file, setFile] = useState(null);
   const [jobTitle, setJobTitle] = useState("");
   const [jobDescription, setJobDescription] = useState("");
+  const [previousAnalysis, setPreviousAnalysis] = useState(params.get("previous") || "");
+  const [history, setHistory] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Past scans for the "new version of..." dropdown
+  useEffect(() => {
+    api.get("/analysis").then((r) => setHistory(r.data)).catch(() => {});
+  }, []);
+
+  // When re-scanning an earlier analysis, pre-fill its job title and description
+  useEffect(() => {
+    if (!previousAnalysis) return;
+    api
+      .get(`/analysis/${previousAnalysis}`)
+      .then((r) => {
+        setJobTitle((t) => t || r.data.jobTitle || "");
+        setJobDescription((d) => d || r.data.jobDescription || "");
+      })
+      .catch(() => {});
+  }, [previousAnalysis]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -20,6 +40,7 @@ export default function Analyze() {
       fd.append("resume", file);
       fd.append("jobTitle", jobTitle);
       fd.append("jobDescription", jobDescription);
+      if (previousAnalysis) fd.append("previousAnalysis", previousAnalysis);
       const { data } = await api.post("/analysis", fd);
       navigate(`/result/${data._id}`);
     } catch (err) {
@@ -37,6 +58,25 @@ export default function Analyze() {
       </p>
       <form onSubmit={submit} className="card space-y-5">
         {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{error}</div>}
+
+        {history.length > 0 && (
+          <div>
+            <label className="block font-semibold mb-2">
+              Is this an improved version of an earlier scan? <span className="text-slate-400 font-normal">(optional)</span>
+            </label>
+            <select className="input" value={previousAnalysis} onChange={(e) => setPreviousAnalysis(e.target.value)}>
+              <option value="">No, this is a new resume / new job</option>
+              {history.map((h) => (
+                <option key={h._id} value={h._id}>
+                  {h.jobTitle} — v{h.versionNumber || 1} — {h.score}/100 — {new Date(h.createdAt).toLocaleDateString()}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500 mt-1">
+              Linking it lets you see exactly what changed and whether your score improved because of it.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block font-semibold mb-2">1. Job title (optional)</label>
@@ -60,7 +100,7 @@ export default function Analyze() {
         </div>
 
         <button className="btn-primary w-full text-lg" disabled={busy}>
-          {busy ? "Analyzing... this takes 5-15 seconds ⏳" : "Analyze my resume ⚡"}
+          {busy ? "Analyzing... this can take up to a minute the first time ⏳" : "Analyze my resume ⚡"}
         </button>
       </form>
     </div>

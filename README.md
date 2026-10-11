@@ -72,3 +72,12 @@ LinkedIn profile import, interview question generator, job recommendations, mult
 
 ## 👨‍💻 Author
 Built during my Full Stack internship at Zyphotechk Technology.
+
+## ✨ v2 features
+- **Explainable scoring**: click any matched keyword to see the exact resume lines where it was found.
+- **Keyword-stuffing detector**: warns when a resume is packed with keywords in a way a human recruiter would distrust.
+- **Score range**: shows how much the score moves if the job description is worded slightly differently, instead of one falsely precise number.
+- **Version history and diff**: link a new scan to an earlier one to see score movement, keywords gained or lost, and the exact text changes.
+- **Compare two resumes** against the same job description.
+- **Honest AI status**: if the AI service is down, the app says so and shows basic tips instead of pretending.
+- **Optional Google sign-in** (needs `GOOGLE_CLIENT_ID` on the server and `VITE_GOOGLE_CLIENT_ID` on the client).

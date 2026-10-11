@@ -17,6 +17,9 @@ export default function Navbar() {
               <Link to="/analyze" className="text-sm font-semibold hover:text-indigo-600">
                 New Analysis
               </Link>
+              <Link to="/compare" className="text-sm font-semibold hover:text-indigo-600">
+                Compare
+              </Link>
               <Link to="/" className="text-sm font-semibold hover:text-indigo-600">
                 Dashboard
               </Link>

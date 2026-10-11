@@ -4,7 +4,7 @@ const STOP_WORDS = new Set([
   "any","out","who","what","when","where","how","why","use","using","used","work","working",
   "team","role","job","candidate","looking","responsible","required","preferred","ability",
   "strong","good","great","excellent","knowledge","understanding","experience","years","year",
-  "including","such","also","must","should","would","could","more","than","other","into","over",
+  "plus","bonus","ideal","nice","familiarity","proficiency","including","such","also","must","should","would","could","more","than","other","into","over",
   "about","across","within","etc","per","new","help","make","need","needs","well","include",
 ]);
 
@@ -29,10 +29,15 @@ function extractKeywords(text) {
     if (clean.includes(p)) found.add(p);
   });
 
+  // Words that are already covered by a matched multi-word phrase (e.g. "rest" and "api" inside
+  // "rest api") are skipped, otherwise one concept would be counted two or three times.
+  const coveredWords = new Set();
+  found.forEach((phrase) => phrase.split(/[\s]+/).forEach((w) => coveredWords.add(w)));
+
   const freq = {};
   clean.split(" ").forEach((w) => {
     const word = w.replace(/^[.\-/]+|[.\-/]+$/g, "");
-    if (word.length < 3 || STOP_WORDS.has(word) || /^\d+$/.test(word)) return;
+    if (word.length < 3 || STOP_WORDS.has(word) || /^\d+$/.test(word) || coveredWords.has(word)) return;
     freq[word] = (freq[word] || 0) + 1;
   });
 
@@ -69,6 +74,103 @@ function formatScore(text) {
   return Math.max(score, 0);
 }
 
+// ---------- Explainability: locate which resume lines contain each matched keyword ----------
+function splitIntoLines(resumeText) {
+  return resumeText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
+function locateKeywordEvidence(resumeText, matchedKeywords) {
+  const lines = splitIntoLines(resumeText);
+  // Array (not an object keyed by keyword): keywords like "node.js" or "ci/cd" are unsafe as MongoDB field names.
+  return matchedKeywords.map((keyword) => {
+    const hits = [];
+    lines.forEach((line, idx) => {
+      if (normalize(line).includes(keyword)) {
+        hits.push({ lineNumber: idx + 1, snippet: line.length > 140 ? line.slice(0, 140) + "\u2026" : line });
+      }
+    });
+    return { keyword, hits: hits.slice(0, 3) };
+  });
+}
+
+// ---------- Overfitting / keyword-stuffing detector ----------
+// Flags resumes that cram keywords unnaturally rather than using them in real sentences.
+function detectStuffing(resumeText, matchedKeywords) {
+  const lines = splitIntoLines(resumeText);
+  const flags = [];
+
+  matchedKeywords.forEach((keyword) => {
+    let occurrences = 0;
+    let inListLikeLine = 0;
+    lines.forEach((line) => {
+      const norm = normalize(line);
+      const count = norm.split(keyword).length - 1;
+      if (count > 0) {
+        occurrences += count;
+        // A "list-like" line: mostly commas/pipes/bullets and short, i.e. a keyword dump rather than a sentence
+        const wordCount = line.split(/\s+/).filter(Boolean).length;
+        const commaCount = (line.match(/[,|\u2022]/g) || []).length;
+        if (wordCount > 0 && commaCount / wordCount > 0.3 && wordCount < 25) {
+          inListLikeLine++;
+        }
+      }
+    });
+    // Flag when a keyword appears many times AND mostly inside comma-dense, short lines
+    if (occurrences >= 4 && inListLikeLine >= Math.ceil(occurrences * 0.6)) {
+      flags.push({
+        keyword,
+        occurrences,
+        reason: `"${keyword}" appears ${occurrences} times, mostly packed into short, comma-heavy lines rather than used in real sentences. This can look like keyword stuffing to a human reviewer even if it raises the ATS keyword score.`,
+      });
+    }
+  });
+
+  const words = resumeText.split(/\s+/).filter(Boolean);
+  const totalKeywordHits = matchedKeywords.reduce((sum, k) => {
+    return sum + (normalize(resumeText).split(k).length - 1);
+  }, 0);
+  const density = words.length ? totalKeywordHits / words.length : 0;
+
+  return {
+    flags: flags.slice(0, 8),
+    keywordDensity: Math.round(density * 1000) / 10, // percentage, 1 decimal
+    densityWarning: density > 0.12, // more than ~12% of all words are matched keywords -> likely stuffed
+  };
+}
+
+// ---------- Score sensitivity ----------
+// Honest range instead of a falsely-precise number. We re-score after dropping the first or the last
+// extracted job-description keyword (the ones most affected by trivial rewording of the JD), using the
+// SAME weighting as the headline score. This measures sensitivity to JD wording; it is not a re-run of an AI.
+function computeConfidenceRange(resumeText, jobDescription, parts) {
+  const { baseScore, sectionScore, fmt } = parts;
+  const jdKeywords = extractKeywords(jobDescription);
+  if (jdKeywords.length < 4) {
+    return { low: baseScore, high: baseScore, note: "The job description is short, so there is limited signal to measure how stable this score is." };
+  }
+  const resumeNorm = normalize(resumeText);
+  const variants = [jdKeywords.slice(0, -1), jdKeywords.slice(1)];
+  const variantScores = variants.map((variant) => {
+    const hit = variant.filter((k) => resumeNorm.includes(k)).length;
+    const kw = Math.round((hit / variant.length) * 100);
+    return Math.round(kw * 0.6 + sectionScore * 0.2 + fmt * 0.2);
+  });
+  const all = [baseScore, ...variantScores];
+  const low = Math.min(...all);
+  const high = Math.max(...all);
+  return {
+    low,
+    high,
+    note:
+      high - low > 6
+        ? "Your score moves noticeably with small changes in how the job description is worded. Treat it as a range, not an exact number."
+        : "Your score stays steady when the job description wording changes slightly.",
+  };
+}
+
 function analyze(resumeText, jobDescription) {
   const jdKeywords = extractKeywords(jobDescription);
   const resumeNorm = normalize(resumeText);
@@ -95,12 +197,20 @@ function analyze(resumeText, jobDescription) {
   // Weighted final score
   const score = Math.round(keywordScore * 0.6 + sectionScore * 0.2 + fmt * 0.2);
 
+  const matchedSlice = matched.slice(0, 30);
+  const evidence = locateKeywordEvidence(resumeText, matchedSlice);
+  const stuffing = detectStuffing(resumeText, matchedSlice);
+  const confidence = computeConfidenceRange(resumeText, jobDescription, { baseScore: score, sectionScore, fmt });
+
   return {
     score,
     breakdown: { keywordScore, sectionScore, formatScore: fmt },
-    matchedKeywords: matched.slice(0, 30),
+    matchedKeywords: matchedSlice,
     missingKeywords: missing.slice(0, 25),
     sections,
+    evidence,       // [{ keyword, hits: [{ lineNumber, snippet }] }] — powers the 'where we found it' view
+    stuffing,        // { flags, keywordDensity, densityWarning } — the overfitting detector
+    confidence,       // { low, high, note } — honest range instead of a fake-precise number
   };
 }
 

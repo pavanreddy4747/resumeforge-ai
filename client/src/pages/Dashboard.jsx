@@ -65,7 +65,12 @@ export default function Dashboard() {
             {items.map((a) => (
               <div key={a._id} className="py-3 flex items-center justify-between gap-3 flex-wrap">
                 <div>
-                  <p className="font-semibold">{a.jobTitle}</p>
+                  <p className="font-semibold">
+                    {a.jobTitle}
+                    {a.versionNumber > 1 && (
+                      <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 align-middle">v{a.versionNumber}</span>
+                    )}
+                  </p>
                   <p className="text-sm text-slate-500">
                     {a.fileName} · {new Date(a.createdAt).toLocaleDateString()}
                   </p>
@@ -75,6 +80,7 @@ export default function Dashboard() {
                     {a.score}/100
                   </span>
                   <Link to={`/result/${a._id}`} className="btn-ghost !py-1.5 text-sm">View</Link>
+                  <Link to={`/analyze?previous=${a._id}`} className="btn-ghost !py-1.5 text-sm">New version</Link>
                   <button onClick={() => remove(a._id)} className="text-red-600 text-sm font-semibold">Delete</button>
                 </div>
               </div>
