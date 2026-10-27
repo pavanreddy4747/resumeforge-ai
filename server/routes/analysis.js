@@ -6,6 +6,8 @@ const Analysis = require("../models/Analysis");
 const { analyze } = require("../utils/scorer");
 const { getAIFeedback } = require("../utils/ai");
 const { summarizeAnalysisDiff } = require("../utils/diff");
+const { planDelete } = require("../utils/lineage");
+const { scanLimiter } = require("../middleware/limits");
 
 const router = express.Router();
 
@@ -14,7 +16,9 @@ const upload = multer({
   limits: { fileSize: 3 * 1024 * 1024 }, // 3MB
   fileFilter: (req, file, cb) => {
     if (file.mimetype !== "application/pdf") {
-      return cb(new Error("Only PDF files are allowed"));
+      const err = new Error("Only PDF files are allowed");
+      err.status = 400; // the user's mistake, not a server crash
+      return cb(err);
     }
     cb(null, true);
   },
@@ -45,7 +49,7 @@ async function extractAndScore(file, jobDescription) {
 // Create analysis. Optionally pass `previousAnalysis` (an existing analysis id) to
 // link this as the next version in a resume's revision history, which powers the
 // dashboard's version diffing view.
-router.post("/", auth, upload.single("resume"), async (req, res) => {
+router.post("/", auth, scanLimiter, upload.single("resume"), async (req, res) => {
   try {
     const { jobDescription, jobTitle, previousAnalysis } = req.body;
     if (!req.file) return res.status(400).json({ message: "Please upload a PDF resume" });
@@ -98,6 +102,7 @@ router.post("/", auth, upload.single("resume"), async (req, res) => {
 router.post(
   "/compare",
   auth,
+  scanLimiter,
   upload.fields([{ name: "resumeA", maxCount: 1 }, { name: "resumeB", maxCount: 1 }]),
   async (req, res) => {
     try {
@@ -193,12 +198,25 @@ router.get("/:id/history", auth, async (req, res) => {
   }
 });
 
-// Delete
+// Delete. If this version sits inside a version chain, repair the chain first so the next version
+// still has something valid to compare against.
 router.delete("/:id", auth, async (req, res) => {
   try {
-    await Analysis.deleteOne({ _id: req.params.id, user: req.userId });
+    const doc = await Analysis.findOne({ _id: req.params.id, user: req.userId }).select("_id lineageId");
+    if (!doc) return res.status(404).json({ message: "Analysis not found" });
+
+    const rootId = doc.lineageId || doc._id;
+    const chain = await Analysis.find({ user: req.userId, $or: [{ _id: rootId }, { lineageId: rootId }] })
+      .select("_id lineageId previousAnalysis versionNumber")
+      .lean();
+    const { updates } = planDelete(chain, doc._id);
+    if (updates.length) {
+      await Analysis.bulkWrite(updates.map((u) => ({ updateOne: { filter: { _id: u._id, user: req.userId }, update: { $set: u.set } } })));
+    }
+    await Analysis.deleteOne({ _id: doc._id, user: req.userId });
     res.json({ message: "Deleted" });
-  } catch {
+  } catch (err) {
+    console.error(err);
     res.status(400).json({ message: "Invalid ID" });
   }
 });

@@ -81,3 +81,27 @@ Built during my Full Stack internship at Zyphotechk Technology.
 - **Compare two resumes** against the same job description.
 - **Honest AI status**: if the AI service is down, the app says so and shows basic tips instead of pretending.
 - **Optional Google sign-in** (needs `GOOGLE_CLIENT_ID` on the server and `VITE_GOOGLE_CLIENT_ID` on the client).
+
+
+## 🧠 v3: smarter scoring
+- **Skill dictionary (117 skills)**: spelling variants count as one skill (Node.js = NodeJS = node js, full-stack = full stack). Ordinary words such as "build" or "hiring" are never counted as skills.
+- **Required vs nice-to-have**: the job description is read for phrases like "is required" and "is a plus", and required skills weigh 3x more.
+- **Proven vs listed**: a skill shown in a project or job bullet earns full credit; one that only appears in a skills list earns 60%.
+- **What-if points**: every missing skill shows the estimated gain if you truly have it and show it in a real bullet.
+- **Bullet checker**: flags weak openers ("Responsible for", "Worked on"), missing action verbs and missing results.
+- **Score range** based on how the score moves if nice-to-have skills or listed-only skills are weighed differently.
+- **General keyword mode** for job descriptions with almost no technical skills, and a warning when the signal is thin.
+- **Safer version history**: deleting a version repairs the chain instead of breaking the next comparison.
+
+## 🛡️ Reliability and security
+- Rate limits: scans are limited per user per hour, failed logins per IP, plus a general flood guard.
+- Security headers (helmet) and clear 400 messages for wrong file types, oversized files and unreadable PDFs.
+- **AI auto-recovery**: if a Gemini model name stops working the server asks Google which models are available and remembers a working one.
+- **Health pages**: `/api/health` (server, database, configuration) and `/api/health/ai` (makes one real Gemini call and shows the real error if it fails).
+
+## ✅ Automated tests
+```bash
+cd server
+npm test
+```
+39 tests cover the scoring rules, version-chain repair, AI model fallback (with a simulated Gemini server), and the real Express app end to end (real PDFs, upload errors, rate limits).

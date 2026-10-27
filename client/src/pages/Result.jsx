@@ -44,16 +44,141 @@ function TextDiff({ lines }) {
   );
 }
 
+
+const STATUS = {
+  proven: { label: "Proven in a project or job", chip: "bg-green-50 text-green-700 border-green-200 hover:bg-green-100", on: "bg-green-600 text-white border-green-600" },
+  mentioned: { label: "Mentioned in a sentence", chip: "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100", on: "bg-teal-600 text-white border-teal-600" },
+  listed: { label: "Only listed", chip: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100", on: "bg-amber-500 text-white border-amber-500" },
+};
+
+// Skills the job asks for: which you have, how well you show them, and which are missing.
+function SkillsSection({ skills, evidenceMap, openKeyword, setOpenKeyword }) {
+  const requiredMissing = skills.missing.filter((m) => m.required);
+  const niceMissing = skills.missing.filter((m) => !m.required);
+  const MissingChip = ({ m }) => (
+    <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-50 text-red-700 text-sm">
+      {m.skill}
+      <span className="text-xs text-red-500" title="Estimated gain if you show this skill in a real project or job bullet">+{m.pointsIfProven}</span>
+    </span>
+  );
+  return (
+    <div className="space-y-6">
+      {skills.note && <div className="card bg-amber-50 border-amber-200 text-sm text-amber-800">{skills.note}</div>}
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="card">
+          <h2 className="font-bold mb-1 text-green-700">✅ Skills you have ({skills.matched.length})</h2>
+          <p className="text-xs text-slate-500 mb-3">Colour shows how well your resume proves each one. Click a skill to see where we found it. ★ = the job requires it.</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 mb-3">
+            {Object.entries(STATUS).map(([k, v]) => (
+              <span key={k} className="inline-flex items-center gap-1">
+                <span className={`inline-block w-2.5 h-2.5 rounded-full border ${v.chip.split(" ").slice(0, 3).join(" ")}`} />{v.label}
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {skills.matched.map((m) => (
+              <button key={m.skill} type="button" onClick={() => setOpenKeyword(openKeyword === m.skill ? null : m.skill)}
+                className={`px-3 py-1 rounded-full text-sm border ${openKeyword === m.skill ? STATUS[m.status].on : STATUS[m.status].chip}`}>
+                {m.required && <span className="mr-1">★</span>}{m.skill}
+              </button>
+            ))}
+          </div>
+          {openKeyword && (
+            <div className="mt-4 p-3 rounded-xl bg-slate-50 text-sm">
+              <p className="font-semibold mb-2">“{openKeyword}” found in:</p>
+              {(evidenceMap[openKeyword] || []).length === 0 ? (
+                <p className="text-slate-500">No line details stored for this scan.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {evidenceMap[openKeyword].map((h, i) => (
+                    <li key={i} className="text-slate-700"><span className="text-slate-400 mr-2">line {h.lineNumber}</span>{h.snippet}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="card">
+          <h2 className="font-bold mb-1 text-red-700">❌ Skills the job wants that we did not find ({skills.missing.length})</h2>
+          <p className="text-xs text-slate-500 mb-3">The number is the estimated score gain if you truly have the skill and show it in a project or job bullet.</p>
+          {requiredMissing.length > 0 && (
+            <>
+              <p className="text-sm font-semibold mb-2">Required</p>
+              <div className="flex flex-wrap gap-2 mb-4">{requiredMissing.map((m) => <MissingChip key={m.skill} m={m} />)}</div>
+            </>
+          )}
+          {niceMissing.length > 0 && (
+            <>
+              <p className="text-sm font-semibold mb-2">Nice to have</p>
+              <div className="flex flex-wrap gap-2">{niceMissing.map((m) => <MissingChip key={m.skill} m={m} />)}</div>
+            </>
+          )}
+          {skills.missing.length === 0 && <p className="text-sm text-green-700">You cover every skill we found in this job description. 🎉</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// "What is the fastest way to raise my score?" - missing skills and listed-only skills, biggest gain first.
+function WhatIfCard({ skills }) {
+  const options = [
+    ...skills.missing.map((m) => ({ skill: m.skill, required: m.required, points: m.pointsIfProven, how: "Not on your resume yet. Add it only if you really have it, inside a project or job bullet." })),
+    ...skills.unproven.map((u) => ({ skill: u.skill, required: u.required, points: u.pointsIfShown, how: "You list it but never show it. Put it inside a project or job bullet." })),
+  ].filter((o) => o.points > 0).sort((a, b) => b.points - a.points).slice(0, 6);
+  if (options.length === 0) return null;
+  return (
+    <div className="card">
+      <h2 className="font-bold mb-1">🚀 Fastest ways to raise your score</h2>
+      <p className="text-xs text-slate-500 mb-3">Estimates for this job description. Only add skills you genuinely have.</p>
+      <ul className="space-y-2">
+        {options.map((o) => (
+          <li key={o.skill} className="flex items-start justify-between gap-3 p-3 rounded-xl bg-indigo-50">
+            <div>
+              <p className="font-semibold text-slate-800">{o.skill} {o.required && <span className="text-xs font-normal text-indigo-700">(required)</span>}</p>
+              <p className="text-sm text-slate-600">{o.how}</p>
+            </div>
+            <span className="shrink-0 font-bold text-indigo-700">+{o.points}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function BulletsCard({ bullets }) {
+  if (!bullets || !bullets.checked) return null;
+  return (
+    <div className="card">
+      <h2 className="font-bold mb-1">✍️ Bullet-point quality</h2>
+      <p className="text-sm text-slate-600 mb-3">
+        {bullets.strong} of {bullets.checked} bullets look strong (they start with an action verb and show a result).
+      </p>
+      {bullets.flagged.length > 0 && (
+        <ul className="space-y-3">
+          {bullets.flagged.map((b, i) => (
+            <li key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <p className="text-slate-800 text-sm">“{b.text}”</p>
+              <ul className="mt-2 list-disc pl-5 text-sm text-amber-700 space-y-0.5">{b.issues.map((x, j) => <li key={j}>{x}</li>)}</ul>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-slate-400 mt-3">This check is automatic and approximate. Bullets that wrap across lines in the PDF can occasionally be misread.</p>
+    </div>
+  );
+}
+
+// Loads the data, then hands it to the display component.
 export default function Result() {
   const { id } = useParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [history, setHistory] = useState([]);
   const [diff, setDiff] = useState(null);
-  const [openKeyword, setOpenKeyword] = useState(null);
 
   useEffect(() => {
-    setData(null); setHistory([]); setDiff(null); setOpenKeyword(null); setError("");
+    setData(null); setHistory([]); setDiff(null); setError("");
     api.get(`/analysis/${id}`)
       .then((r) => {
         setData(r.data);
@@ -67,6 +192,12 @@ export default function Result() {
 
   if (error) return <div className="card text-red-600">{error}</div>;
   if (!data) return <div className="p-10 text-center">Loading...</div>;
+  return <ResultView data={data} history={history} diff={diff} />;
+}
+
+// Pure display: everything it shows comes from its props, so it can be rendered and tested on its own.
+export function ResultView({ data, history = [], diff = null }) {
+  const [openKeyword, setOpenKeyword] = useState(null);
 
   const label = data.score >= 75 ? "Strong match 🎉" : data.score >= 50 ? "Decent, needs work 🔧" : "Needs major improvement ⚠️";
   const radar = [
@@ -80,6 +211,7 @@ export default function Result() {
     hasSummary: "Summary", hasSkills: "Skills", hasExperience: "Experience",
     hasEducation: "Education", hasProjects: "Projects", hasContact: "Contact info",
   };
+  const isV3 = Boolean(data.skills && (data.skills.matched?.length || data.skills.missing?.length));
   const evidenceMap = {};
   (Array.isArray(data.evidence) ? data.evidence : []).forEach((e) => { evidenceMap[e.keyword] = e.hits || []; });
   const stuffing = data.stuffing;
@@ -132,7 +264,7 @@ export default function Result() {
             </ResponsiveContainer>
           </div>
           <p className="text-xs text-slate-500">
-            Score = keywords 60% + sections 20% + formatting 20%. Keywords {data.breakdown.keywordScore}, sections {data.breakdown.sectionScore}, formatting {data.breakdown.formatScore}.
+            Score = {isV3 ? "skills" : "keywords"} 60% + sections 20% + formatting {isV3 ? "and bullet quality " : ""}20%. {isV3 ? "Skills" : "Keywords"} {data.breakdown.keywordScore}, sections {data.breakdown.sectionScore}, formatting {data.breakdown.formatScore}.
           </p>
         </div>
       </div>
@@ -186,6 +318,10 @@ export default function Result() {
         </div>
       )}
 
+      {isV3 ? (
+        <SkillsSection skills={data.skills} evidenceMap={evidenceMap} openKeyword={openKeyword} setOpenKeyword={setOpenKeyword} />
+      ) : (
+        <>
       <div className="grid md:grid-cols-2 gap-6">
         <div className="card">
           <h2 className="font-bold mb-1 text-green-700">✅ Matched keywords ({data.matchedKeywords.length})</h2>
@@ -223,6 +359,8 @@ export default function Result() {
           <p className="text-xs text-slate-500 mt-3">Only add a missing keyword if it is true for you and you can show it in a real project or role.</p>
         </div>
       </div>
+        </>
+      )}
 
       <div className="card">
         <h2 className="font-bold mb-3">📋 Section check</h2>
@@ -234,6 +372,9 @@ export default function Result() {
           ))}
         </div>
       </div>
+
+      {isV3 && <WhatIfCard skills={data.skills} />}
+      <BulletsCard bullets={data.bullets} />
 
       <div className="grid md:grid-cols-2 gap-6">
         {ai.strengths?.length > 0 && (

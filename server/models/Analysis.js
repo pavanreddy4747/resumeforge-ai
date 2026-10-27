@@ -19,6 +19,7 @@ const analysisSchema = new mongoose.Schema(
       keywordScore: Number,
       sectionScore: Number,
       formatScore: Number,
+      bulletScore: Number, // null when the resume has fewer than 3 detectable bullets
     },
     matchedKeywords: [String],
     missingKeywords: [String],
@@ -39,6 +40,29 @@ const analysisSchema = new mongoose.Schema(
         hits: [{ _id: false, lineNumber: Number, snippet: String }],
       },
     ],
+
+    // Skill-level detail (v3): is each skill proven or only listed, required or nice-to-have, and what is it worth?
+    skills: {
+      mode: { type: String, enum: ["skills", "generic"], default: "skills" },
+      note: String,
+      matched: [
+        { _id: false, skill: String, category: String, required: Boolean, status: String, hits: Number },
+      ],
+      missing: [
+        { _id: false, skill: String, category: String, required: Boolean, pointsIfListed: Number, pointsIfProven: Number },
+      ],
+      unproven: [
+        { _id: false, skill: String, category: String, required: Boolean, pointsIfShown: Number },
+      ],
+    },
+
+    // Bullet-point quality check
+    bullets: {
+      checked: Number,
+      strong: Number,
+      bulletScore: Number,
+      flagged: [{ _id: false, text: String, issues: [String] }],
+    },
 
     // Overfitting / keyword-stuffing detector
     stuffing: {

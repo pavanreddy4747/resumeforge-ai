@@ -21,7 +21,7 @@ export default function Dashboard() {
   if (loading) return <div className="p-10 text-center">Loading...</div>;
 
   const chartData = [...items].reverse().map((a, i) => ({
-    name: `#${i + 1}`, score: a.score,
+    name: `#${i + 1}`, score: a.score, title: a.jobTitle, version: a.versionNumber || 1,
   }));
   const avg = items.length ? Math.round(items.reduce((s, a) => s + a.score, 0) / items.length) : 0;
   const best = items.length ? Math.max(...items.map((a) => a.score)) : 0;
@@ -41,14 +41,15 @@ export default function Dashboard() {
 
       {items.length > 1 && (
         <div className="card">
-          <h2 className="font-bold mb-3">📈 Score improvement over time</h2>
+          <h2 className="font-bold mb-1">📈 Your scores over time</h2>
+          <p className="text-xs text-slate-500 mb-3">Each point is one scan, and scans may be for different jobs. To track one resume getting better, use <b>New version</b> on a result.</p>
           <div className="h-64">
             <ResponsiveContainer>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
                 <YAxis domain={[0, 100]} />
-                <Tooltip />
+                <Tooltip labelFormatter={(label, payload) => (payload && payload[0] ? `${label} · ${payload[0].payload.title} (v${payload[0].payload.version})` : label)} />
                 <Line type="monotone" dataKey="score" stroke="#4f46e5" strokeWidth={3} />
               </LineChart>
             </ResponsiveContainer>
